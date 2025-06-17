@@ -54,6 +54,7 @@ jobs:
             cp $i  ../../pkg/
           done
           echo '#!/bin/bash' > ../../pkg/install.sh
+          echo 'sudo insmod iwlmld.ko' >> ../../pkg/install.sh
           echo 'sudo insmod iwlwifi.ko' >> ../../pkg/install.sh
           echo 'sudo insmod iwlmvm.ko' >> ../../pkg/install.sh
           echo 'sudo insmod btintel.ko' >> ../../pkg/install.sh
