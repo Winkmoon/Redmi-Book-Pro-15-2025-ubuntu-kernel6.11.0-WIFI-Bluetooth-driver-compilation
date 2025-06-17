@@ -28,7 +28,7 @@ jobs:
 
       - name: 下载驱动源码
         run: |
-          git clone https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/backport-iwlwifi.git --depth 1
+          git clone https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/backport-iwlwifi.git
           cd backport-iwlwifi
           MAIN=$(echo $KERNEL | cut -d. -f1-2)
           if git branch -a | grep -q "backport-${MAIN}.y"; then
