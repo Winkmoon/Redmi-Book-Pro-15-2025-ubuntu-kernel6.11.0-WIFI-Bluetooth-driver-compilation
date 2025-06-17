@@ -59,8 +59,9 @@ jobs:
           echo 'sudo insmod btintel.ko' >> ../../pkg/install.sh
           echo 'sudo systemctl start bluetooth' >> ../../pkg/install.sh
           chmod +x ../../pkg/install.sh
-          cd ..
-          tar -czvf ax203-6.11.0-26.tar.gz pkg/
+          # cd ..
+          tar -czvf ax203-6.11.0-26.tar.gz ../../pkg
+          cp ax203-6.11.0-26.tar.gz  ../
 
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
