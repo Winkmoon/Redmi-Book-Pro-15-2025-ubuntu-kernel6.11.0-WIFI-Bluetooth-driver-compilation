@@ -1,17 +1,12 @@
-name: AX203 Driver Build & Release Pipeline
+name: 编译适用于Redmi Book Pro16 -2025 ubuntu6.11.0-26-generic硬件驱动
 
 on:
-  
   workflow_dispatch:
     inputs:
       kernel_version:
-        description: '目标内核完整版本（如6.11.0-061100-generic）'
+        default: '6.11.0-26-generic'
         required: true
-        default: '6.11.0-061100-generic'
-  # 也可设置为push到main分支时自动触发
-  push:
-    branches:
-      - main
+        description: '内核完整版本'
 
 jobs:
   build:
@@ -22,140 +17,79 @@ jobs:
 
       - name: 安装编译依赖
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            dkms \
-            git \
-            wget \
-            cpio \
-            bc
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential dkms git wget cpio bc
 
       - name: 安装目标内核头文件
         run: |
-          KERNEL_VERSION=${{ github.event.inputs.kernel_version }}
-          sudo apt-get install -y linux-headers-${KERNEL_VERSION}
-          # 验证头文件安装
-          ls /usr/src/linux-headers-${KERNEL_VERSION}
+          KERNEL=${{ github.event.inputs.kernel_version }}
+          sudo apt-get install -y linux-headers-${KERNEL}
+          ls /usr/src/linux-headers-${KERNEL}
 
-      - name: 下载backport-iwlwifi驱动源码
+      - name: 下载驱动源码
         run: |
           git clone https://git.kernel.org/pub/scm/linux/kernel/git/iwlwifi/backport-iwlwifi.git
           cd backport-iwlwifi
-          # 自动匹配内核主版本分支
-          MAIN_VERSION=$(echo ${{ github.event.inputs.kernel_version }} | cut -d'.' -f1-2)
-          if git branch -a | grep -q "backport-${MAIN_VERSION}.y"; then
-            git checkout backport-${MAIN_VERSION}.y
-            echo "已切换到backport-${MAIN_VERSION}.y分支"
+          MAIN=$(echo $KERNEL | cut -d. -f1-2)
+          if git branch -a | grep -q "backport-${MAIN}.y"; then
+            git checkout backport-${MAIN}.y
           else
             git checkout master
-            echo "使用master分支（无对应backport分支）"
           fi
 
-      - name: 编译驱动（含WiFi和蓝牙）
+      - name: 编译驱动
         run: |
           cd backport-iwlwifi
-          # 生成配置
           make defconfig-iwlwifi-public
-          # 编译（使用所有CPU核心加速）
           make -j$(nproc)
-          # 检查编译产物
           ls -la drivers/net/wireless/intel/iwlwifi/
-          ls -la drivers/bluetooth/
 
-      - name: 打包驱动模块及安装脚本
+      - name: 打包驱动与脚本
         run: |
           cd backport-iwlwifi
-          mkdir -p ../../release-packages
-          # 复制WiFi驱动模块
-          cp -r drivers/net/wireless/intel/iwlwifi/*.ko ../../release-packages/
-          # 复制蓝牙驱动模块
-          cp drivers/bluetooth/btintel.ko ../../release-packages/
-          # 添加安装脚本
-          echo '#!/bin/bash' > ../../release-packages/install.sh
-          echo 'sudo insmod iwlwifi.ko || { echo "WiFi驱动加载失败"; exit 1; }' >> ../../release-packages/install.sh
-          echo 'sudo insmod iwlmvm.ko || { echo "WiFi虚拟机模块加载失败"; exit 1; }' >> ../../release-packages/install.sh
-          echo 'sudo insmod btintel.ko || { echo "蓝牙驱动加载失败"; exit 1; }' >> ../../release-packages/install.sh
-          echo 'sudo systemctl start bluetooth' >> ../../release-packages/install.sh
-          echo 'echo "驱动安装完成！请尝试连接WiFi和蓝牙设备"' >> ../../release-packages/install.sh
-          chmod +x ../../release-packages/install.sh
-          # 复制README说明
-          echo "# AX203驱动安装说明" > ../../release-packages/README.md
-          echo "## 适用系统" >> ../../release-packages/README.md
-          echo "- Ubuntu内核版本: ${{ github.event.inputs.kernel_version }}" >> ../../release-packages/README.md
-          echo "## 安装步骤" >> ../../release-packages/README.md
-          echo "1. 解压驱动包" >> ../../release-packages/README.md
-          echo "2. 执行 `sudo ./install.sh`" >> ../../release-packages/README.md
-          # 打包（含脚本和说明）
+          mkdir -p ../../pkg
+          cp drivers/net/wireless/intel/iwlwifi/*.ko ../../pkg/
+          cp drivers/bluetooth/btintel.ko ../../pkg/
+          echo '#!/bin/bash' > ../../pkg/install.sh
+          echo 'sudo insmod iwlwifi.ko' >> ../../pkg/install.sh
+          echo 'sudo insmod iwlmvm.ko' >> ../../pkg/install.sh
+          echo 'sudo insmod btintel.ko' >> ../../pkg/install.sh
+          echo 'sudo systemctl start bluetooth' >> ../../pkg/install.sh
+          chmod +x ../../pkg/install.sh
           cd ..
-          tar -czvf ax203-driver-v${MAIN_VERSION}.tar.gz release-packages/
+          tar -czvf ax203-6.11.0-26.tar.gz pkg/
 
-      - name: 上传编译产物到临时存储
-        id: upload-artifact
-        uses: actions/upload-artifact@v3
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
         with:
-          name: ax203-driver-package
-          path: ax203-driver-v${MAIN_VERSION}.tar.gz
-          retention-days: 7
-
-      - name: 显示编译完成信息
-        run: |
-          echo "AX203驱动编译完成，适用于内核版本: ${{ github.event.inputs.kernel_version }}"
-          ls -la ax203-driver-v${MAIN_VERSION}.tar.gz
+          name: ax203-driver
+          path: ax203-6.11.0-26.tar.gz
 
   release:
-    # 依赖build job完成，且仅在成功时执行
     needs: build
-    if: ${{ success() }}
     runs-on: ubuntu-latest
     steps:
-      - name: 下载编译产物
-        uses: actions/download-artifact@v3
+      - name: 下载产物
+        uses: actions/download-artifact@v4
         with:
-          name: ax203-driver-package
-          path: ./
-
-      - name: 提取版本信息
-        id: get-version
-        run: |
-          PACKAGE=$(ls ax203-driver-v*.tar.gz | head -n 1)
-          VERSION=$(echo ${PACKAGE} | cut -d'-' -f3 | cut -d'.' -f1-2)
-          echo "version=${VERSION}" >> $GITHUB_ENV
-          echo "package_name=$(basename ${PACKAGE})" >> $GITHUB_ENV
+          name: ax203-driver
 
       - name: 创建Release
-        id: create-release
+        id: rel
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ env.version }}
-          release_name: AX203 Driver for Ubuntu Kernel ${{ env.version }}
-          body: |
-            ### AX203 WiFi+蓝牙驱动包
-            - 适用于Ubuntu内核版本：${{ env.version }}
-            - 包含文件：
-              - WiFi驱动模块：iwlwifi.ko, iwlmvm.ko
-              - 蓝牙驱动模块：btintel.ko
-              - 自动安装脚本：install.sh
-              - 安装说明：README.md
-            - **安装步骤**：
-              1. 解压包：`tar -xzvf ${package_name}`
-              2. 进入目录：`cd release-packages`
-              3. 执行安装：`sudo ./install.sh`
-          draft: false
-          prerelease: false
+          tag_name: v6.11.0-26
+          release_name: AX203 for 6.11.0-26-generic
+          body: 'WiFi/蓝牙驱动，适用于6.11.0-26-generic内核'
 
-      - name: 上传驱动包到Release
+      - name: 上传资产
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./${{ env.package_name }}
-          asset_name: ${{ env.package_name }}
+          upload_url: ${{ steps.rel.outputs.upload_url }}
+          asset_path: ./ax203-6.11.0-26.tar.gz
+          asset_name: ax203-6.11.0-26.tar.gz
           asset_content_type: application/gzip
-
-      - name: 输出Release链接
-        run: |
-          echo "驱动已成功发布至Release: ${{ steps.create_release.outputs.html_url }}"
