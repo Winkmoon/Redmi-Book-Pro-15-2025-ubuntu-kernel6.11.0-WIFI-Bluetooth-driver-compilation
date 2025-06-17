@@ -48,8 +48,11 @@ jobs:
         run: |
           cd backport-iwlwifi
           mkdir -p ../../pkg
-          cp drivers/net/wireless/intel/iwlwifi/*.ko ../../pkg/
-          cp drivers/bluetooth/btintel.ko ../../pkg/
+          cp drivers/net/wireless/intel/iwlwifi/*.ko ../../pkg/ || echo "未找到drivers/net/wireless/intel/iwlwifi/*.ko"
+          cp drivers/bluetooth/btintel.ko ../../pkg/ || echo "未找到bluetooth/btintel.ko"
+          for i in $(find drivers -name "*.ko"); do
+            cp $i  ../../pkg/
+          done
           echo '#!/bin/bash' > ../../pkg/install.sh
           echo 'sudo insmod iwlwifi.ko' >> ../../pkg/install.sh
           echo 'sudo insmod iwlmvm.ko' >> ../../pkg/install.sh
